@@ -8,11 +8,18 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// release 서명 정보를 android/key.properties에서 읽어오기
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.example.flutter_ai_chat"
     compileSdk = flutter.compileSdkVersion
     // ndkVersion = flutter.ndkVersion
-    ndkVersion = "25.1.8937393"
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
@@ -28,17 +35,30 @@ android {
         applicationId = "com.example.flutter_ai_chat"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 23
+        minSdkVersion = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    // 릴리즈 서명 설정 추가
+    signingConfigs {
+        release {
+            keyAlias keystoreProperties['keyAlias']
+            keyPassword keystoreProperties['keyPassword']
+            storeFile file(keystoreProperties['storeFile'])
+            storePassword keystoreProperties['storePassword']
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.debug
+            // 이제 debug 서명이 아니라, 내가 만든 keystore로 서명
+            signingConfig = signingConfigs.release
+
+            // (선택) 난독화/리소스 축소는 일단 꺼둠: 배포 안정성 우선
+            minifyEnabled false
+            shrinkResources false
         }
     }
 }

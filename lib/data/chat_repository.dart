@@ -22,16 +22,13 @@ class ChatRepository extends ChangeNotifier {
 
   static bool get hasCurrentUser => _currentUser != null;
   static Future<ChatRepository> get forCurrentUser async {
-    // no user, no repository
     if (_currentUser == null) throw Exception('No user logged in');
 
-    // load the repository for the current user if it's not already loaded
     if (_currentUserRepository == null) {
       assert(_currentUser != null);
       final collection = FirebaseFirestore.instance
           .collection('users/${_currentUser!.uid}/chats');
 
-      // load the chats from the database
       final chats = await ChatRepository._loadChats(collection);
 
       _currentUserRepository = ChatRepository._(
@@ -39,7 +36,6 @@ class ChatRepository extends ChangeNotifier {
         chats: chats,
       );
 
-      // if there are no chats, add a new one
       if (chats.isEmpty) {
         await _currentUserRepository!.addChat();
       }
@@ -51,17 +47,14 @@ class ChatRepository extends ChangeNotifier {
   static User? get user => _currentUser;
 
   static set user(User? user) {
-    // clear the repository cache when the user is logged out
     if (user == null) {
       _currentUser = null;
       _currentUserRepository = null;
       return;
     }
 
-    // ignore if the same user is already logged in
     if (user.uid == _currentUser?.uid) return;
 
-    // clear the repository cache to load the user's chats on demand
     _currentUser = user;
     _currentUserRepository = null;
   }
@@ -106,21 +99,17 @@ class ChatRepository extends ChangeNotifier {
   }
 
   Future<void> deleteChat(Chat chat) async {
-    // remove the chat from the in-memory list
     final removed = _chats.remove(chat);
     assert(removed);
 
-    // delete the chat history from the database
     final querySnapshot = await _historyCollection(chat).get();
     for (final doc in querySnapshot.docs) {
       await doc.reference.delete();
     }
 
-    // delete the chat from the database
     await _chatsCollection.doc(chat.id).delete();
     notifyListeners();
 
-    // if we've deleted the last chat, add a new one
     if (_chats.isEmpty) await addChat();
   }
 
@@ -141,16 +130,38 @@ class ChatRepository extends ChangeNotifier {
     return messages;
   }
 
+  /// - 기존 메시지는 "없을 때만" 생성
+  /// - 마지막 assistant 메시지는 스트리밍 중에도 계속 바뀌므로 "항상 set(merge:true)"로 갱신
+  ///
+  /// 이렇게 하면 Firestore 기반 UI에서도 스트리밍처럼 점진적으로 보일 수 있음
   Future<void> updateHistory(Chat chat, List<ChatMessage> history) async {
+    if (history.isEmpty) return;
+
+    final historyCol = _historyCollection(chat);
+    final lastIndex = history.length - 1;
+
     for (var i = 0; i != history.length; ++i) {
-      // skip if the message already exists
       final id = i.toString().padLeft(3, '0');
-      final querySnapshot = await _historyCollection(chat).doc(id).get();
-      if (querySnapshot.exists) continue;
+      final docRef = historyCol.doc(id);
 
       final message = history[i];
       final json = message.toJson();
-      await _historyCollection(chat).doc(id).set(json);
+
+      final isAssistant = !(message.origin.isUser);
+      final isLast = i == lastIndex;
+
+      // 마지막 assistant는 스트리밍 중 계속 바뀌므로 무조건 갱신
+      // (final/error 포함해서 항상 최신으로 유지)
+      if (isLast && isAssistant) {
+        await docRef.set(json, SetOptions(merge: true));
+        continue;
+      }
+
+      // 나머지는 기존처럼 "이미 있으면 스킵" (불필요한 write 비용 절감)
+      final snap = await docRef.get();
+      if (snap.exists) continue;
+
+      await docRef.set(json);
     }
   }
 }

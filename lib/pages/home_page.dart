@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_ai_toolkit/flutter_ai_toolkit.dart';
 
 import '../data/chat.dart';
 import '../data/chat_repository.dart';
+import '../data/http_llm_provider.dart';
 import '../login_info.dart';
 import 'chat_list_view.dart';
 import 'split_or_tabs.dart';
@@ -21,6 +21,7 @@ class _HomePageState extends State<HomePage> {
   LlmProvider? _provider;
   ChatRepository? _repository;
   String? _currentChatId;
+  String? _error;
 
   @override
   void initState() {
@@ -31,9 +32,18 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _setRepository() async {
     assert(_repository == null);
-    _repository = await ChatRepository.forCurrentUser;
-    await _setChat(_repository!.chats.last);
-    setState(() {});
+    try {
+      _repository = await ChatRepository.forCurrentUser;
+      if (_repository!.chats.isEmpty) {
+        await _repository!.addChat();
+      }
+      await _setChat(_repository!.chats.last);
+    } catch (e) {
+      debugPrint('Error setting repository: $e');
+      _error = e.toString();
+    } finally {
+      if (mounted) setState(() {});
+    }
   }
 
   Future<void> _setChat(Chat chat) async {
@@ -50,53 +60,49 @@ class _HomePageState extends State<HomePage> {
     _provider!.addListener(_onHistoryChanged);
   }
 
-  LlmProvider _createProvider(Iterable<ChatMessage>? history) =>
-      FirebaseProvider(
-        history: history,
-        model: FirebaseAI.vertexAI().generativeModel(
-          model: 'gemini-2.0-flash',
-        ),
-      );
+  LlmProvider _createProvider(Iterable<ChatMessage>? history) => HttpLlmProvider(
+    history: history,
+    apiUrl: 'https://rag-backend-28269840215.asia-northeast3.run.app/v1/chat', // Replace with your actual Cloud Run URL
+  );
 
-  Chat? get _currentChat =>
-      _repository?.chats.singleWhere((chat) => chat.id == _currentChatId);
+  Chat? get _currentChat => _repository?.chats.singleWhere((chat) => chat.id == _currentChatId);
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          title: const Text('Flutter AI Chat'),
-          actions: [
-            IconButton(
-              onPressed: _repository == null ? null : _onAdd,
-              tooltip: 'New Chat',
-              icon: const Icon(Icons.edit_square),
-            ),
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: 'Logout: ${LoginInfo.instance.displayName!}',
-              onPressed: () async => LoginInfo.instance.logout(),
-            ),
-          ],
+    appBar: AppBar(
+      title: const Text('溫古(On-Go)'),
+      actions: [
+        IconButton(
+          onPressed: _repository == null ? null : _onAdd,
+          tooltip: 'New Chat',
+          icon: const Icon(Icons.edit_square),
         ),
-        body: _repository == null
-            ? const Center(child: CircularProgressIndicator())
-            : SplitOrTabs(
-                tabs: [
-                  const Tab(text: 'Chats'),
-                  Tab(text: _currentChat?.title),
-                ],
-                children: [
-                  ChatListView(
-                    chats: _repository!.chats,
-                    selectedChatId: _currentChatId!,
-                    onChatSelected: _onChatSelected,
-                    onRenameChat: _onRenameChat,
-                    onDeleteChat: _onDeleteChat,
-                  ),
-                  LlmChatView(provider: _provider!),
-                ],
+        IconButton(
+          icon: const Icon(Icons.logout),
+          tooltip: 'Logout: ${LoginInfo.instance.displayName!}',
+          onPressed: () async => LoginInfo.instance.logout(),
+        ),
+      ],
+    ),
+    body: _repository == null
+        ? Center(child: _error != null ? Text('Error: $_error') : const CircularProgressIndicator())
+        : SplitOrTabs(
+            tabs: [
+              const Tab(text: 'Chats'),
+              Tab(text: _currentChat?.title),
+            ],
+            children: [
+              ChatListView(
+                chats: _repository!.chats,
+                selectedChatId: _currentChatId!,
+                onChatSelected: _onChatSelected,
+                onRenameChat: _onRenameChat,
+                onDeleteChat: _onDeleteChat,
               ),
-      );
+              LlmChatView(provider: _provider!),
+            ],
+          ),
+  );
 
   Future<void> _onAdd() async {
     final chat = await _repository!.addChat();
@@ -123,8 +129,13 @@ class _HomePageState extends State<HomePage> {
     assert(history[0].origin.isUser);
     assert(history[1].origin.isLlm);
     final provider = _createProvider(history);
+    // 원본
+    // final stream = provider.sendMessageStream(
+    //   'Please give me a short title for this chat. It should be a single, '
+    //   'short phrase with no markdown',
+    // );
     final stream = provider.sendMessageStream(
-      'Please give me a short title for this chat. It should be a single, '
+      'Please give me a short Korean title for this chat, specifically about user question. It should be a single, '
       'short phrase with no markdown',
     );
 
@@ -141,18 +152,10 @@ class _HomePageState extends State<HomePage> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Rename Chat: ${chat.title}'),
-        content: TextField(
-          controller: controller,
-        ),
+        content: TextField(controller: controller),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(controller.text),
-            child: const Text('Rename'),
-          ),
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(context).pop(controller.text), child: const Text('Rename')),
         ],
       ),
     );
@@ -168,16 +171,10 @@ class _HomePageState extends State<HomePage> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Delete Chat: ${chat.title}'),
-        content: const Text('Are you sure you want to delete this chat?'),
+        content: const Text('이 대화를 삭제하시겠습니까?'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
-          ),
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('취소')),
+          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('삭제하기')),
         ],
       ),
     );
