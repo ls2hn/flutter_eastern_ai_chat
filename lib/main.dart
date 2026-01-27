@@ -9,6 +9,8 @@ import 'firebase_options.dart'; // from https://firebase.google.com/docs/flutter
 import 'login_info.dart';
 import 'pages/home_page.dart';
 
+import 'theme/app_theme.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
@@ -63,5 +65,10 @@ class _AppState extends State<App> {
   Widget build(BuildContext context) => MaterialApp.router(
         routerConfig: _router,
         debugShowCheckedModeBanner: false,
+
+        theme: AppTheme.light(),
+        // 다크 테마도 만들면:
+        // darkTheme: AppTheme.dark(),
+        // themeMode: ThemeMode.system,
       );
 }

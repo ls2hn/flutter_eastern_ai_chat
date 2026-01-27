@@ -7,14 +7,14 @@ import '../data/chat.dart';
 import '../data/chat_repository.dart';
 import '../data/http_llm_provider.dart';
 import '../login_info.dart';
-import 'chat_list_view.dart';
+import '../theme/brand_colors.dart';
 import 'split_or_tabs.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
-  _HomePageState createState() => _HomePageState();
+  State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
@@ -22,6 +22,8 @@ class _HomePageState extends State<HomePage> {
   ChatRepository? _repository;
   String? _currentChatId;
   String? _error;
+
+  bool _isGeneratingTitle = false;
 
   @override
   void initState() {
@@ -47,11 +49,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _setChat(Chat chat) async {
-    assert(_currentChatId != chat.id);
+    if (_currentChatId == chat.id) return;
     _currentChatId = chat.id;
     final history = await _repository!.getHistory(chat);
     _setProvider(history);
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   void _setProvider([Iterable<ChatMessage>? history]) {
@@ -61,48 +63,61 @@ class _HomePageState extends State<HomePage> {
   }
 
   LlmProvider _createProvider(Iterable<ChatMessage>? history) => HttpLlmProvider(
-    history: history,
-    apiUrl: 'https://rag-backend-28269840215.asia-northeast3.run.app/v1/chat', // Replace with your actual Cloud Run URL
-  );
+        history: history,
+        apiUrl: 'https://rag-backend-28269840215.asia-northeast3.run.app/v1/chat',
+      );
 
-  Chat? get _currentChat => _repository?.chats.singleWhere((chat) => chat.id == _currentChatId);
+  Chat? get _currentChat {
+    final repo = _repository;
+    final id = _currentChatId;
+    if (repo == null || id == null) return null;
+    try {
+      return repo.chats.singleWhere((chat) => chat.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('溫古(On-Go)'),
-      actions: [
-        IconButton(
-          onPressed: _repository == null ? null : _onAdd,
-          tooltip: 'New Chat',
-          icon: const Icon(Icons.edit_square),
+        appBar: AppBar(
+          title: const Text('溫古(On-Go)'),
+          actions: [
+            IconButton(
+              onPressed: _repository == null ? null : _onAdd,
+              tooltip: 'New Chat',
+              icon: const Icon(Icons.edit_square),
+            ),
+            IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: 'Logout: ${LoginInfo.instance.displayName!}',
+              onPressed: () async => LoginInfo.instance.logout(),
+            ),
+          ],
         ),
-        IconButton(
-          icon: const Icon(Icons.logout),
-          tooltip: 'Logout: ${LoginInfo.instance.displayName!}',
-          onPressed: () async => LoginInfo.instance.logout(),
-        ),
-      ],
-    ),
-    body: _repository == null
-        ? Center(child: _error != null ? Text('Error: $_error') : const CircularProgressIndicator())
-        : SplitOrTabs(
-            tabs: [
-              const Tab(text: 'Chats'),
-              Tab(text: _currentChat?.title),
-            ],
-            children: [
-              ChatListView(
-                chats: _repository!.chats,
-                selectedChatId: _currentChatId!,
-                onChatSelected: _onChatSelected,
-                onRenameChat: _onRenameChat,
-                onDeleteChat: _onDeleteChat,
+        body: _repository == null
+            ? Center(
+                child: _error != null
+                    ? Text('Error: $_error')
+                    : const CircularProgressIndicator(),
+              )
+            : SplitOrTabs(
+                tabs: [
+                  const Tab(text: 'Chats'),
+                  Tab(text: _currentChat?.title),
+                ],
+                children: [
+                  ChatListView(
+                    chats: _repository!.chats,
+                    selectedChatId: _currentChatId!,
+                    onChatSelected: _onChatSelected,
+                    onRenameChat: _onRenameChat,
+                    onDeleteChat: _onDeleteChat,
+                  ),
+                  LlmChatView(provider: _provider!),
+                ],
               ),
-              LlmChatView(provider: _provider!),
-            ],
-          ),
-  );
+      );
 
   Future<void> _onAdd() async {
     final chat = await _repository!.addChat();
@@ -115,35 +130,63 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _onHistoryChanged() async {
-    final history = _provider!.history.toList();
+    final repo = _repository;
+    final provider = _provider;
+    final chat = _currentChat;
+    if (repo == null || provider == null || chat == null) return;
 
-    // update the history in the database
-    await _repository!.updateHistory(_currentChat!, history);
+    final history = provider.history.toList();
 
-    // if the history is not the first prompt or the user has manually set a
-    // chat title is not the default, do nothing more
-    if (history.length != 2) return;
-    if (_currentChat!.title != ChatRepository.newChatTitle) return;
+    // 1) 히스토리 DB 업데이트
+    await repo.updateHistory(chat, history);
 
-    // grab a default chat title for the first prompt
-    assert(history[0].origin.isUser);
-    assert(history[1].origin.isLlm);
-    final provider = _createProvider(history);
-    // 원본
-    // final stream = provider.sendMessageStream(
-    //   'Please give me a short title for this chat. It should be a single, '
-    //   'short phrase with no markdown',
-    // );
-    final stream = provider.sendMessageStream(
-      'Please give me a short Korean title for this chat, specifically about user question. It should be a single, '
-      'short phrase with no markdown',
-    );
+    // 2) 이미 제목이 바뀐 채팅이거나, 생성 중이면 종료
+    if (_isGeneratingTitle) return;
+    if (chat.title != ChatRepository.newChatTitle) return;
 
-    // update the chat title in the database
-    final title = await stream.join();
-    final chatWithNewTitle = Chat(id: _currentChatId!, title: title.trim());
-    await _repository!.updateChat(chatWithNewTitle);
-    setState(() => _currentChatId = chatWithNewTitle.id);
+    // 3) "첫 user 질문" + "그에 대한 첫 llm 답변"이 생겼을 때만 제목 생성
+    final userIdx = history.indexWhere((m) => m.origin.isUser);
+    if (userIdx < 0) return;
+    final llmIdx = history.indexWhere((m) => m.origin.isLlm, userIdx + 1);
+    if (llmIdx < 0) return;
+
+    final firstUser = history[userIdx];
+    final firstLlm = history[llmIdx];
+
+    final userText = (firstUser.text ?? '').trim();
+    final llmText = (firstLlm.text ?? '').trim();
+
+
+    // 텍스트도 없고 첨부도 없으면 스킵 (text는 null일 수 있음)
+    if (userText.isEmpty && firstUser.attachments.isEmpty) return;
+    if (llmText.isEmpty && firstLlm.attachments.isEmpty) return;
+
+    _isGeneratingTitle = true;
+    try {
+      // 제목 생성에는 첫 Q/A만 넣기
+      final titleProvider = _createProvider([firstUser, firstLlm]);
+
+      final stream = titleProvider.sendMessageStream(
+        '사용자의 질문을 기준으로 이 대화의 제목을 아주 짧은 한국어로 만들어 주세요.\n'
+        '- 한 줄\n'
+        '- 6~14자 정도의 짧은 구(phrase)\n'
+        '- 따옴표/마크다운/이모지 금지\n'
+        '- 설명 없이 제목만 출력\n',
+      );
+
+      final title = (await stream.join()).trim();
+
+      if (title.isEmpty) return;
+
+      final chatWithNewTitle = Chat(id: chat.id, title: title);
+      await repo.updateChat(chatWithNewTitle);
+
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('Auto-title generation failed: $e');
+    } finally {
+      _isGeneratingTitle = false;
+    }
   }
 
   Future<void> _onRenameChat(Chat chat) async {
@@ -154,15 +197,21 @@ class _HomePageState extends State<HomePage> {
         title: Text('Rename Chat: ${chat.title}'),
         content: TextField(controller: controller),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.of(context).pop(controller.text), child: const Text('Rename')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('Rename'),
+          ),
         ],
       ),
     );
 
     if (newTitle != null) {
       await _repository!.updateChat(Chat(id: chat.id, title: newTitle));
-      setState(() {});
+      if (mounted) setState(() {});
     }
   }
 
@@ -173,16 +222,150 @@ class _HomePageState extends State<HomePage> {
         title: Text('Delete Chat: ${chat.title}'),
         content: const Text('이 대화를 삭제하시겠습니까?'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('취소')),
-          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('삭제하기')),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('삭제하기'),
+          ),
         ],
       ),
     );
 
     if (shouldDelete ?? false) {
       await _repository!.deleteChat(chat);
-      if (_currentChatId == chat.id) await _setChat(_repository!.chats.last);
-      setState(() {});
+      if (_currentChatId == chat.id && _repository!.chats.isNotEmpty) {
+        await _setChat(_repository!.chats.last);
+      }
+      if (mounted) setState(() {});
     }
   }
 }
+
+/* ===========================
+   아래는 "현재 사용 중인" ChatListView UI 그대로
+   =========================== */
+
+class ChatListView extends StatelessWidget {
+  const ChatListView({
+    required this.chats,
+    required this.selectedChatId,
+    required this.onChatSelected,
+    required this.onRenameChat,
+    required this.onDeleteChat,
+    super.key,
+  });
+
+  final List<Chat> chats;
+  final String selectedChatId;
+  final void Function(Chat) onChatSelected;
+  final void Function(Chat) onRenameChat;
+  final void Function(Chat) onDeleteChat;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return ColoredBox(
+      color: backgroundTone,
+      child: ListView.separated(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+        itemCount: chats.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        itemBuilder: (context, index) {
+          final chat = chats[chats.length - index - 1];
+          final selected = chat.id == selectedChatId;
+
+          final title = chat.title.trim().isEmpty ? '새 대화' : chat.title.trim();
+
+          final cardColor = selected ? brandSecondary.withOpacity(0.14) : Colors.white;
+          final borderColor =
+              selected ? brandSecondary.withOpacity(0.85) : brandSecondary.withOpacity(0.40);
+
+          return Material(
+            color: cardColor,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: borderColor, width: selected ? 1.2 : 1.0),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => onChatSelected(chat),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 4,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: selected ? brandSecondary.withOpacity(0.95) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Tooltip(
+                        message: title,
+                        child: Text(
+                          title,
+                          overflow: TextOverflow.ellipsis,
+                          style: textTheme.titleMedium?.copyWith(
+                            color: brandPrimary,
+                            fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    PopupMenuButton<_ChatAction>(
+                      tooltip: '메뉴',
+                      icon: Icon(Icons.more_vert, color: brandPrimary.withOpacity(0.85)),
+                      onSelected: (action) {
+                        switch (action) {
+                          case _ChatAction.rename:
+                            onRenameChat(chat);
+                            break;
+                          case _ChatAction.delete:
+                            onDeleteChat(chat);
+                            break;
+                        }
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: _ChatAction.rename,
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit, size: 18),
+                              SizedBox(width: 10),
+                              Text('이름 변경'),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: _ChatAction.delete,
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete, size: 18),
+                              SizedBox(width: 10),
+                              Text('삭제'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+enum _ChatAction { rename, delete }
