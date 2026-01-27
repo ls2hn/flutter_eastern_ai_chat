@@ -24,6 +24,27 @@ class _HomePageState extends State<HomePage> {
   String? _error;
 
   bool _isGeneratingTitle = false;
+  // "생각중..." 표시용 상태
+  bool _isThinking = false;
+
+  // LlmChatView에 연결할 messageSender (응답 스트림 동안만 _isThinking=true)
+  Stream<String> _messageSender(
+    String prompt, {
+    required Iterable<Attachment> attachments,
+  }) async* {
+    if (mounted) setState(() => _isThinking = true);
+
+    try {
+      // provider가 null일 수 없는 흐름에서만 호출되도록 되어 있어야 합니다.
+      final stream = _provider!.sendMessageStream(prompt, attachments: attachments);
+
+      await for (final chunk in stream) {
+        yield chunk;
+      }
+    } finally {
+      if (mounted) setState(() => _isThinking = false);
+    }
+  }
 
   @override
   void initState() {
@@ -58,7 +79,10 @@ class _HomePageState extends State<HomePage> {
 
   void _setProvider([Iterable<ChatMessage>? history]) {
     _provider?.removeListener(_onHistoryChanged);
-    setState(() => _provider = _createProvider(history));
+    setState(() {
+      _isThinking = false;
+      _provider = _createProvider(history);
+    });
     _provider!.addListener(_onHistoryChanged);
   }
 
@@ -78,46 +102,99 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          title: const Text('溫古(On-Go)'),
-          actions: [
-            IconButton(
-              onPressed: _repository == null ? null : _onAdd,
-              tooltip: 'New Chat',
-              icon: const Icon(Icons.edit_square),
+@override
+Widget build(BuildContext context) => Scaffold(
+      appBar: AppBar(
+        title: const Text('溫古(On-Go)'),
+        actions: [
+          IconButton(
+            onPressed: _repository == null ? null : _onAdd,
+            tooltip: 'New Chat',
+            icon: const Icon(Icons.edit_square),
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Logout: ${LoginInfo.instance.displayName!}',
+            onPressed: () async => LoginInfo.instance.logout(),
+          ),
+        ],
+      ),
+      body: _repository == null
+          ? Center(
+              child: _error != null
+                  ? Text('Error: $_error')
+                  : const CircularProgressIndicator(),
+            )
+          : SplitOrTabs(
+              tabs: [
+                const Tab(text: 'Chats'),
+                Tab(text: _currentChat?.title),
+              ],
+              children: [
+                ChatListView(
+                  chats: _repository!.chats,
+                  selectedChatId: _currentChatId!,
+                  onChatSelected: _onChatSelected,
+                  onRenameChat: _onRenameChat,
+                  onDeleteChat: _onDeleteChat,
+                ),
+
+                Stack(
+                  children: [
+                    LlmChatView(
+                      provider: _provider!,
+                      style: const LlmChatViewStyle(
+                        chatInputStyle: ChatInputStyle(
+                          hintText: '고민이 있나요? 궁금한 내용들을 말해주세요.',
+                        ),
+                      ),
+                      messageSender: _messageSender, // 기존 그대로 유지
+                    ),
+
+                    // "생각중..." 표시 (응답 기다리는 동안만 노출)
+                    Positioned(
+                      left: 72,
+                      right: 76,
+                      // 입력창 위로 살짝 띄우기 + 키보드 올라오면 같이 올라오게
+                      bottom: 76 + MediaQuery.of(context).viewInsets.bottom,
+                      child: IgnorePointer(
+                        ignoring: true,
+                        child: AnimatedOpacity(
+                          opacity: _isThinking ? 1.0 : 0.0,
+                          duration: const Duration(milliseconds: 150),
+                          child: Align(
+                            alignment: Alignment.bottomLeft,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surface,
+                                borderRadius: BorderRadius.circular(18),
+                                border: Border.all(
+                                  color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.6),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text('생각중...'),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: 'Logout: ${LoginInfo.instance.displayName!}',
-              onPressed: () async => LoginInfo.instance.logout(),
-            ),
-          ],
-        ),
-        body: _repository == null
-            ? Center(
-                child: _error != null
-                    ? Text('Error: $_error')
-                    : const CircularProgressIndicator(),
-              )
-            : SplitOrTabs(
-                tabs: [
-                  const Tab(text: 'Chats'),
-                  Tab(text: _currentChat?.title),
-                ],
-                children: [
-                  ChatListView(
-                    chats: _repository!.chats,
-                    selectedChatId: _currentChatId!,
-                    onChatSelected: _onChatSelected,
-                    onRenameChat: _onRenameChat,
-                    onDeleteChat: _onDeleteChat,
-                  ),
-                  LlmChatView(provider: _provider!),
-                ],
-              ),
-      );
+    );
 
   Future<void> _onAdd() async {
     final chat = await _repository!.addChat();
