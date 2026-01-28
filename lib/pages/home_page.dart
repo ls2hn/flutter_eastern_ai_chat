@@ -142,21 +142,45 @@ Widget build(BuildContext context) => Scaffold(
 
                 Stack(
                   children: [
-                    LlmChatView(
-                      provider: _provider!,
-                      style: AppTheme.chatStyle(
-                        context,
-                        hintText: '고민이 있나요? 궁금한 내용들을 말해주세요.',
-                      ),
-                    
-                    messageSender: _messageSender, // 기존 그대로 유지
-                  ),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final isMobile = constraints.maxWidth < 600;
 
-                    // "생각중..." 표시 (응답 기다리는 동안만 노출)
+                        // 화면 가로폭을 최대한 쓰되, 좌우 여백 약간만 남기기
+                        final bubbleMaxWidth = isMobile
+                            ? (constraints.maxWidth - 16).clamp(0, double.infinity).toDouble()
+                            : 600.0;
+
+                        final baseStyle = AppTheme.chatStyle(
+                          context,
+                          hintText: '고민이 있나요? 궁금한 내용들을 말해주세요.',
+                        );
+
+                        final newLlmStyle = (baseStyle.llmMessageStyle ?? LlmMessageStyle.defaultStyle()).copyWith(
+                          icon: null,              // ✅ AI 아이콘 제거
+                          maxWidth: bubbleMaxWidth, // ✅ 말풍선 최대폭을 화면폭에 맞춤
+                          minWidth: 0,             // ✅ 모바일에서 불필요한 최소폭 제거
+                          flex: 14,                // ✅ Row에서 말풍선이 더 넓게 차지하도록
+                        );
+
+                        final newChatStyle = baseStyle.copyWith(
+                          llmMessageStyle: newLlmStyle,
+                          // (선택) 전체 패딩도 줄이면 더 넓게 보입니다.
+                          padding: isMobile ? const EdgeInsets.fromLTRB(8, 8, 8, 12) : baseStyle.padding,
+                        );
+
+                        return LlmChatView(
+                          provider: _provider!,
+                          style: newChatStyle,
+                          messageSender: _messageSender, // 그대로 유지
+                        );
+                      },
+                    ),
+
+                    // "생각중..." 표시 (기존 그대로)
                     Positioned(
                       left: 72,
                       right: 76,
-                      // 입력창 위로 살짝 띄우기 + 키보드 올라오면 같이 올라오게
                       bottom: 76 + MediaQuery.of(context).viewInsets.bottom,
                       child: IgnorePointer(
                         ignoring: true,
@@ -192,7 +216,7 @@ Widget build(BuildContext context) => Scaffold(
                       ),
                     ),
                   ],
-                ),
+                )
               ],
             ),
     );
