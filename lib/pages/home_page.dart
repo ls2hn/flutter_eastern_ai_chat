@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_ai_toolkit/flutter_ai_toolkit.dart';
+import 'package:flutter/services.dart';
 
 import '../data/chat.dart';
 import '../data/chat_repository.dart';
@@ -107,15 +108,49 @@ class _HomePageState extends State<HomePage> {
 Widget build(BuildContext context) => Scaffold(
       appBar: AppBar(
         title: const Text('溫古(On-Go)'),
+
+        // AppBar 기본색 제거(투명) + 재질감(머티리얼3) 틴트 제거
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        shadowColor: Colors.transparent,
+
+        // 상태바 아이콘(시간/배터리) 밝게
+        systemOverlayStyle: SystemUiOverlayStyle.light,
+
+        // 여기서 질감 배경 깔기
+        flexibleSpace: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 1) 텍스처 이미지 (타일링 또는 커버)
+            Opacity(
+              opacity: 0.9, // 질감 세기(원하시는 대로 0.15~0.35 조절)
+              child: Image.asset(
+                'assets/images/ink.png',
+                repeat: ImageRepeat.repeat, // 텍스처면 repeat 추천
+                fit: BoxFit.none,           // repeat일 때 보통 none
+                filterQuality: FilterQuality.medium,
+                alignment: Alignment.topLeft,
+              ),
+            ),
+
+            // 2) 먹색 베이스 오버레이(텍스트 가독성 유지)
+            Container(
+              color: const Color(0xFF1F1B16).withOpacity(0.01), // 먹색 느낌 (조절 가능)
+            ),
+          ],
+        ),
+
         actions: [
           IconButton(
             onPressed: _repository == null ? null : _onAdd,
-            tooltip: 'New Chat',
+            tooltip: '새 대화',
             icon: const Icon(Icons.edit_square),
           ),
           IconButton(
             icon: const Icon(Icons.logout),
-            tooltip: 'Logout: ${LoginInfo.instance.displayName!}',
+            tooltip: '로그아웃: ${LoginInfo.instance.displayName!}',
             onPressed: () async => LoginInfo.instance.logout(),
           ),
         ],
@@ -142,11 +177,43 @@ Widget build(BuildContext context) => Scaffold(
 
                 Stack(
                   children: [
+                    //  한지 배경 (아주 옅게 5~8%)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        ignoring: true,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            // (선택) 베이스 컬러를 아주 연한 미색으로 깔고 싶으면 사용
+                            // Container(color: const Color(0xFFF7F2E8)),
+
+                            // 텍스처 이미지
+                            Opacity(
+                              opacity: 0.8, // ✅ 5~8% 권장: 0.05~0.08
+                              child: Image.asset(
+                                'assets/images/hanji.png',
+                                // ✅ 타일링 텍스처면 repeat 추천 (정사각형 seamless 텍스처에 최적)
+                                repeat: ImageRepeat.repeat,
+                                fit: BoxFit.none,
+
+                                // 큰 이미지(스캔본)로 "한 장"처럼 쓰고 싶으면 아래처럼 바꾸세요:
+                                // repeat: ImageRepeat.noRepeat,
+                                // fit: BoxFit.cover,
+
+                                filterQuality: FilterQuality.medium,
+                                alignment: Alignment.topLeft,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // ✅ 2) 기존 LayoutBuilder + LlmChatView
                     LayoutBuilder(
                       builder: (context, constraints) {
                         final isMobile = constraints.maxWidth < 600;
 
-                        // 화면 가로폭을 최대한 쓰되, 좌우 여백 약간만 남기기
                         final bubbleMaxWidth = isMobile
                             ? (constraints.maxWidth - 16).clamp(0, double.infinity).toDouble()
                             : 600.0;
@@ -156,26 +223,30 @@ Widget build(BuildContext context) => Scaffold(
                           hintText: '고민이 있나요? 궁금한 내용을 말해주세요.',
                         );
 
-                        final newLlmStyle = (baseStyle.llmMessageStyle ?? LlmMessageStyle.defaultStyle()).copyWith(
-                          icon: null,              // ✅ AI 아이콘 제거
-                          maxWidth: bubbleMaxWidth, // ✅ 말풍선 최대폭을 화면폭에 맞춤
-                          minWidth: 0,             // ✅ 모바일에서 불필요한 최소폭 제거
-                          flex: 14,                // ✅ Row에서 말풍선이 더 넓게 차지하도록
+                        final newLlmStyle =
+                            (baseStyle.llmMessageStyle ?? LlmMessageStyle.defaultStyle()).copyWith(
+                          icon: null,
+                          maxWidth: bubbleMaxWidth,
+                          minWidth: 0,
+                          flex: 14,
                         );
 
                         final newChatStyle = baseStyle.copyWith(
                           llmMessageStyle: newLlmStyle,
-                          // (선택) 전체 패딩도 줄이면 더 넓게 보입니다.
                           padding: isMobile ? const EdgeInsets.fromLTRB(8, 8, 8, 12) : baseStyle.padding,
+
+                          // ✅ 중요: LlmChatView 자체 배경을 투명으로 해야
+                          // 뒤에 깐 hanji 텍스처가 보입니다.
+                          backgroundColor: Colors.transparent,
                         );
 
                         return LlmChatView(
                           provider: _provider!,
                           style: newChatStyle,
-                          messageSender: _messageSender, // 그대로 유지
+                          messageSender: _messageSender,
 
-                          enableVoiceNotes: false, // 마이크(음성 입력) 버튼 제거
-                          enableAttachments: false, // (선택) + 버튼도 제거
+                          enableVoiceNotes: false,
+                          enableAttachments: false,
                         );
                       },
                     ),

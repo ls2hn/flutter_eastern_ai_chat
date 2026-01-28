@@ -5,10 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'data/chat_repository.dart';
-import 'firebase_options.dart'; // from https://firebase.google.com/docs/flutter/setup
+import 'firebase_options.dart';
 import 'login_info.dart';
 import 'pages/home_page.dart';
-
 import 'theme/app_theme.dart';
 
 void main() async {
@@ -40,11 +39,30 @@ class _AppState extends State<App> {
       GoRoute(
         name: 'login',
         path: '/login',
-        builder: (context, state) => SignInScreen(
-          showAuthActionSwitch: true,
-          breakpoint: 600,
-          providers: LoginInfo.authProviders,
-          showPasswordVisibilityToggle: true,
+        builder: (context, state) => Stack(
+          children: [
+            // ✅ 배경 이미지
+            Positioned.fill(
+              child: Image.asset(
+                'assets/images/hanji.png',
+                fit: BoxFit.cover, // 꽉 채우기 (텍스처가 큰 이미지라면 추천)
+              ),
+            ),
+
+            // ✅ SignInScreen의 Scaffold 배경을 투명하게 만들어
+            //    뒤의 이미지가 보이도록 함
+            Theme(
+              data: Theme.of(context).copyWith(
+                scaffoldBackgroundColor: Colors.transparent,
+              ),
+              child: SignInScreen(
+                showAuthActionSwitch: true,
+                breakpoint: 600,
+                providers: LoginInfo.authProviders,
+                showPasswordVisibilityToggle: true,
+              ),
+            ),
+          ],
         ),
       ),
     ],
@@ -56,6 +74,7 @@ class _AppState extends State<App> {
 
       if (!loggedIn && !loggingIn) return loginLocation;
       if (loggedIn && loggingIn) return homeLocation;
+      
       return null;
     },
     refreshListenable: LoginInfo.instance,
@@ -65,7 +84,6 @@ class _AppState extends State<App> {
   Widget build(BuildContext context) => MaterialApp.router(
         routerConfig: _router,
         debugShowCheckedModeBanner: false,
-
         theme: AppTheme.light(),
         // 다크 테마도 만들면:
         // darkTheme: AppTheme.dark(),
