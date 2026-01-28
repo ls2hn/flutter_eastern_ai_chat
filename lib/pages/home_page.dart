@@ -58,7 +58,7 @@ class _HomePageState extends State<HomePage> {
       final stream = _provider!.sendMessageStream(prompt, attachments: attachments);
 
       await for (final chunk in stream) {
-        // ✅ "첫 토큰(의미 있는 텍스트)" 도착 순간에 생각중... 끄기
+        // "첫 토큰(의미 있는 텍스트)" 도착 순간에 생각중... 끄기
         if (!firstTokenArrived && chunk.trim().isNotEmpty) {
           firstTokenArrived = true;
           if (mounted) setState(() => _isThinking = false);
@@ -325,7 +325,7 @@ class _HomePageState extends State<HomePage> {
                       Positioned(
                         left: 34,
                         right: 76,
-                        bottom: 192 + MediaQuery.of(context).viewInsets.bottom,
+                        bottom: 83 + MediaQuery.of(context).viewInsets.bottom,
                         child: IgnorePointer(
                           ignoring: true,
                           child: AnimatedOpacity(
