@@ -48,7 +48,7 @@ class _HomePageState extends State<HomePage> {
     if (mounted) {
       setState(() {
         _isThinking = true;
-        _showEmptyCharacter = false; // 질문 보내는 즉시 캐릭터 숨김(원하시면)
+        //_showEmptyCharacter = false; // 질문 보내는 즉시 캐릭터 숨김(원하시면)
       });
     }
 
@@ -138,7 +138,7 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(
-          title: const Text('溫古(On-Go)'),
+          title: const Text('溫故(On-Go)'),
           backgroundColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
           elevation: 0,
@@ -149,7 +149,7 @@ class _HomePageState extends State<HomePage> {
             fit: StackFit.expand,
             children: [
               Opacity(
-                opacity: 0.9,
+                opacity: 0.86,
                 child: Image.asset(
                   'assets/images/ink.png',
                   repeat: ImageRepeat.repeat,
@@ -264,19 +264,23 @@ class _HomePageState extends State<HomePage> {
                             hintText: '고민이나 궁금한 내용을 말해주세요.',
                           );
 
-                          // ✅ 기존 llm 스타일(패딩/마크다운 스타일)을 먼저 “기억”해둡니다.
+                          // 기존 llm 스타일(패딩/마크다운 스타일)을 백업
                           final llmBase = baseStyle.llmMessageStyle ?? LlmMessageStyle.defaultStyle();
                           final llmInnerPadding = llmBase.padding;
                           final llmMarkdownStyle = llmBase.markdownStyle;
+                          final llmOuterMargin = llmBase.margin;
+                          final llmDecoration = llmBase.decoration;
 
 
-                          // ✅ 핵심: 말풍선 자체 패딩을 0으로 (빈 응답일 때 말풍선이 0 크기)
+                          // 말풍선 자체 패딩을 0으로 (빈 응답일 때 말풍선이 0 크기)
                           final newLlmStyle = llmBase.copyWith(
                           icon: null,
                           maxWidth: bubbleMaxWidth,
                           minWidth: 0,
                           flex: 14,
                           padding: EdgeInsets.zero,
+                          margin: EdgeInsets.zero,
+                          decoration: const BoxDecoration(),
                           );
 
                           final newChatStyle = baseStyle.copyWith(
@@ -292,17 +296,22 @@ class _HomePageState extends State<HomePage> {
                             style: newChatStyle,
                             messageSender: _messageSender,
 
-                            // ✅ 핵심: 스트리밍 시작 직후 response == ''이면 아예 렌더링 안 함
+                            // 스트리밍 시작 직후 response == ''이면 아예 렌더링 안 함(테두리도 0)
                             responseBuilder: (context, response) {
                               if (response.trim().isEmpty) {
-                                return const SizedBox.shrink(); // <- 이게 “빈 말풍선 생성”을 막습니다.
+                                return const SizedBox.shrink(); // <- 이게 “빈 말풍선 생성”을 막는다.
                               }
 
                               return Padding(
-                                padding: llmInnerPadding, // ✅ 기존 말풍선 여백 복원
-                                child: MarkdownBody(
-                                  data: response,
-                                  styleSheet: llmMarkdownStyle ?? MarkdownStyleSheet.fromTheme(Theme.of(context)),
+                                padding: llmOuterMargin,
+                                child: Container(
+                                  decoration: llmDecoration,
+                                  padding: llmInnerPadding,
+                                  child: MarkdownBody(
+                                    data: response,
+                                    styleSheet: llmMarkdownStyle ??
+                                        MarkdownStyleSheet.fromTheme(Theme.of(context)),
+                                  ),
                                 ),
                               );
                             },
@@ -316,7 +325,7 @@ class _HomePageState extends State<HomePage> {
                       Positioned(
                         left: 34,
                         right: 76,
-                        bottom: 83 + MediaQuery.of(context).viewInsets.bottom,
+                        bottom: 192 + MediaQuery.of(context).viewInsets.bottom,
                         child: IgnorePointer(
                           ignoring: true,
                           child: AnimatedOpacity(
