@@ -121,7 +121,8 @@ class _HomePageState extends State<HomePage> {
   LlmProvider _createProvider(Iterable<ChatMessage>? history) => HttpLlmProvider(
         history: history,
         apiUrl:
-            'https://rag-backend-28269840215.asia-northeast3.run.app/v1/chat',
+          //'http://127.0.0.1:8080/v1/chat',
+          'https://rag-backend-28269840215.asia-northeast3.run.app/v1/chat',
       );
 
   Chat? get _currentChat {
@@ -184,7 +185,7 @@ class _HomePageState extends State<HomePage> {
               )
             : SplitOrTabs(
                 tabs: [
-                  const Tab(text: 'Chats'),
+                  const Tab(text: '대화 내역'),
                   Tab(text: _currentChat?.title),
                 ],
                 children: [
@@ -261,7 +262,7 @@ class _HomePageState extends State<HomePage> {
 
                           final baseStyle = AppTheme.chatStyle(
                             context,
-                            hintText: '고민이나 궁금한 내용을 말해주세요.',
+                            hintText: '고민이나 궁금한 내용이 있나요?',
                           );
 
                           // 기존 llm 스타일(패딩/마크다운 스타일)을 백업
@@ -439,16 +440,16 @@ class _HomePageState extends State<HomePage> {
     final newTitle = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Rename Chat: ${chat.title}'),
+        title: Text('대화방 이름 바꾸기: ${chat.title}'),
         content: TextField(controller: controller),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+            child: const Text('취소'),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(controller.text),
-            child: const Text('Rename'),
+            child: const Text('이름 바꾸기'),
           ),
         ],
       ),
@@ -464,7 +465,7 @@ class _HomePageState extends State<HomePage> {
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Delete Chat: ${chat.title}'),
+        title: Text('대화 삭제: ${chat.title}'),
         content: const Text('이 대화를 삭제하시겠습니까?'),
         actions: [
           TextButton(

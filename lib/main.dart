@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_ui_auth/firebase_ui_auth.dart';
+import 'package:firebase_ui_localizations/firebase_ui_localizations.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 
 import 'data/chat_repository.dart';
@@ -31,11 +33,7 @@ class App extends StatefulWidget {
 class _AppState extends State<App> {
   final _router = GoRouter(
     routes: [
-      GoRoute(
-        name: 'home',
-        path: '/',
-        builder: (context, state) => const HomePage(),
-      ),
+      GoRoute(name: 'home', path: '/', builder: (context, state) => const HomePage()),
       GoRoute(
         name: 'login',
         path: '/login',
@@ -52,9 +50,7 @@ class _AppState extends State<App> {
             // ✅ SignInScreen의 Scaffold 배경을 투명하게 만들어
             //    뒤의 이미지가 보이도록 함
             Theme(
-              data: Theme.of(context).copyWith(
-                scaffoldBackgroundColor: Colors.transparent,
-              ),
+              data: Theme.of(context).copyWith(scaffoldBackgroundColor: Colors.transparent),
               child: SignInScreen(
                 showAuthActionSwitch: true,
                 breakpoint: 600,
@@ -74,7 +70,7 @@ class _AppState extends State<App> {
 
       if (!loggedIn && !loggingIn) return loginLocation;
       if (loggedIn && loggingIn) return homeLocation;
-      
+
       return null;
     },
     refreshListenable: LoginInfo.instance,
@@ -82,11 +78,19 @@ class _AppState extends State<App> {
 
   @override
   Widget build(BuildContext context) => MaterialApp.router(
-        routerConfig: _router,
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light(),
-        // 다크 테마도 만들면:
-        // darkTheme: AppTheme.dark(),
-        // themeMode: ThemeMode.system,
-      );
+    routerConfig: _router,
+    debugShowCheckedModeBanner: false,
+    theme: AppTheme.light(),
+    // 다크 테마도 만들면:
+    // darkTheme: AppTheme.dark(),
+    // themeMode: ThemeMode.system,
+    locale: const Locale('ko'),
+    supportedLocales: const [Locale('ko')],
+    localizationsDelegates: const [
+      FirebaseUILocalizations.delegate,
+      GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate,
+      GlobalCupertinoLocalizations.delegate,
+    ],
+  );
 }
