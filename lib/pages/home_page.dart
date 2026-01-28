@@ -153,7 +153,7 @@ Widget build(BuildContext context) => Scaffold(
 
                         final baseStyle = AppTheme.chatStyle(
                           context,
-                          hintText: '고민이 있나요? 궁금한 내용들을 말해주세요.',
+                          hintText: '고민이 있나요? 궁금한 내용을 말해주세요.',
                         );
 
                         final newLlmStyle = (baseStyle.llmMessageStyle ?? LlmMessageStyle.defaultStyle()).copyWith(
@@ -173,15 +173,18 @@ Widget build(BuildContext context) => Scaffold(
                           provider: _provider!,
                           style: newChatStyle,
                           messageSender: _messageSender, // 그대로 유지
+
+                          enableVoiceNotes: false, // 마이크(음성 입력) 버튼 제거
+                          enableAttachments: false, // (선택) + 버튼도 제거
                         );
                       },
                     ),
 
                     // "생각중..." 표시 (기존 그대로)
                     Positioned(
-                      left: 72,
+                      left: 34,
                       right: 76,
-                      bottom: 76 + MediaQuery.of(context).viewInsets.bottom,
+                      bottom: 83 + MediaQuery.of(context).viewInsets.bottom,
                       child: IgnorePointer(
                         ignoring: true,
                         child: AnimatedOpacity(
