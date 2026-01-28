@@ -7,6 +7,7 @@ import '../data/chat.dart';
 import '../data/chat_repository.dart';
 import '../data/http_llm_provider.dart';
 import '../login_info.dart';
+import '../theme/app_theme.dart';
 import '../theme/brand_colors.dart';
 import 'split_or_tabs.dart';
 
@@ -143,13 +144,13 @@ Widget build(BuildContext context) => Scaffold(
                   children: [
                     LlmChatView(
                       provider: _provider!,
-                      style: const LlmChatViewStyle(
-                        chatInputStyle: ChatInputStyle(
-                          hintText: '고민이 있나요? 궁금한 내용들을 말해주세요.',
-                        ),
+                      style: AppTheme.chatStyle(
+                        context,
+                        hintText: '고민이 있나요? 궁금한 내용들을 말해주세요.',
                       ),
-                      messageSender: _messageSender, // 기존 그대로 유지
-                    ),
+                    
+                    messageSender: _messageSender, // 기존 그대로 유지
+                  ),
 
                     // "생각중..." 표시 (응답 기다리는 동안만 노출)
                     Positioned(

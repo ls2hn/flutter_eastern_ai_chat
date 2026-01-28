@@ -18,14 +18,12 @@ class AppTheme {
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: backgroundTone,
-
       appBarTheme: const AppBarTheme(
         backgroundColor: brandPrimary,
         foregroundColor: Colors.white,
         centerTitle: true,
         elevation: 0,
       ),
-
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.white,
@@ -46,14 +44,13 @@ class AppTheme {
     );
   }
 
-  /// Flutter AI Toolkit 채팅 UI 스타일
-  static LlmChatViewStyle chatStyle(BuildContext context) {
+  /// Flutter AI Toolkit 채팅 UI 스타일 (HomePage에서 hintText 주입 가능)
+  static LlmChatViewStyle chatStyle(BuildContext context, {String? hintText}) {
     return LlmChatViewStyle(
       backgroundColor: backgroundTone,
       menuColor: Colors.white,
       progressIndicatorColor: brandPrimary,
 
-      // 사용자 말풍선(오른쪽)
       userMessageStyle: UserMessageStyle(
         textStyle: Theme.of(context)
             .textTheme
@@ -70,7 +67,6 @@ class AppTheme {
         ),
       ),
 
-      // AI 말풍선(왼쪽)
       llmMessageStyle: LlmMessageStyle(
         icon: Icons.auto_awesome,
         iconColor: brandPrimary,
@@ -93,10 +89,8 @@ class AppTheme {
         margin: const EdgeInsets.symmetric(vertical: 5),
       ),
 
-      // 입력창
       chatInputStyle: ChatInputStyle(
-        hintText: '메시지를 입력하세요',
-        // ChatInputStyle은 문서상 textStyle/hintText 등 지원 :contentReference[oaicite:1]{index=1}
+        hintText: hintText ?? '메시지를 입력하세요',
         textStyle: Theme.of(context)
             .textTheme
             .bodyMedium
@@ -112,7 +106,6 @@ class AppTheme {
         ),
       ),
 
-      // 버튼 톤 통일 (submit/attach/camera/record 등은 LlmChatViewStyle로 스타일 지정 가능) :contentReference[oaicite:2]{index=2}
       submitButtonStyle: ActionButtonStyle(
         iconColor: Colors.white,
         iconDecoration: BoxDecoration(
