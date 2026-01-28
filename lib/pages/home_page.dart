@@ -29,16 +29,31 @@ class _HomePageState extends State<HomePage> {
   // "생각중..." 표시용 상태
   bool _isThinking = false;
 
+  // ✅ 새 채팅(히스토리 없음)일 때만 캐릭터 오버레이 표시
+  bool _showEmptyCharacter = false;
+
+  bool _isChatEmpty(Iterable<ChatMessage>? history) {
+    if (history == null) return true;
+    // system 메시지 등이 섞일 수 있어서 user/llm 메시지 유무로 판단
+    return !history.any((m) => m.origin.isUser || m.origin.isLlm);
+  }
+
   // LlmChatView에 연결할 messageSender (응답 스트림 동안만 _isThinking=true)
   Stream<String> _messageSender(
     String prompt, {
     required Iterable<Attachment> attachments,
   }) async* {
-    if (mounted) setState(() => _isThinking = true);
+    if (mounted) {
+      setState(() {
+        _isThinking = true;
+        //_showEmptyCharacter = false; // ✅ 질문 보내는 즉시 캐릭터 숨김
+      });
+    }
 
     try {
       // provider가 null일 수 없는 흐름에서만 호출되도록 되어 있어야 합니다.
-      final stream = _provider!.sendMessageStream(prompt, attachments: attachments);
+      final stream =
+          _provider!.sendMessageStream(prompt, attachments: attachments);
 
       await for (final chunk in stream) {
         yield chunk;
@@ -81,16 +96,22 @@ class _HomePageState extends State<HomePage> {
 
   void _setProvider([Iterable<ChatMessage>? history]) {
     _provider?.removeListener(_onHistoryChanged);
+
+    final shouldShow = _isChatEmpty(history);
+
     setState(() {
       _isThinking = false;
+      _showEmptyCharacter = true; //shouldShow; // 👤비어있으면 캐릭터 보이기
       _provider = _createProvider(history);
     });
+
     _provider!.addListener(_onHistoryChanged);
   }
 
   LlmProvider _createProvider(Iterable<ChatMessage>? history) => HttpLlmProvider(
         history: history,
-        apiUrl: 'https://rag-backend-28269840215.asia-northeast3.run.app/v1/chat',
+        apiUrl:
+            'https://rag-backend-28269840215.asia-northeast3.run.app/v1/chat',
       );
 
   Chat? get _currentChat {
@@ -104,196 +125,239 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-@override
-Widget build(BuildContext context) => Scaffold(
-      appBar: AppBar(
-        title: const Text('溫古(On-Go)'),
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+          title: const Text('溫古(On-Go)'),
 
-        // AppBar 기본색 제거(투명) + 재질감(머티리얼3) 틴트 제거
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        shadowColor: Colors.transparent,
+          // AppBar 기본색 제거(투명) + 재질감(머티리얼3) 틴트 제거
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          shadowColor: Colors.transparent,
 
-        // 상태바 아이콘(시간/배터리) 밝게
-        systemOverlayStyle: SystemUiOverlayStyle.light,
+          // 상태바 아이콘(시간/배터리) 밝게
+          systemOverlayStyle: SystemUiOverlayStyle.light,
 
-        // 여기서 질감 배경 깔기
-        flexibleSpace: Stack(
-          fit: StackFit.expand,
-          children: [
-            // 1) 텍스처 이미지 (타일링 또는 커버)
-            Opacity(
-              opacity: 0.9, // 질감 세기(원하시는 대로 0.15~0.35 조절)
-              child: Image.asset(
-                'assets/images/ink.png',
-                repeat: ImageRepeat.repeat, // 텍스처면 repeat 추천
-                fit: BoxFit.none,           // repeat일 때 보통 none
-                filterQuality: FilterQuality.medium,
-                alignment: Alignment.topLeft,
+          // 여기서 질감 배경 깔기
+          flexibleSpace: Stack(
+            fit: StackFit.expand,
+            children: [
+              // 텍스처 이미지
+              Opacity(
+                opacity: 0.9, // 질감 세기
+                child: Image.asset(
+                  'assets/images/ink.png',
+                  repeat: ImageRepeat.repeat, // 텍스처면 repeat 추천
+                  fit: BoxFit.none, // repeat일 때 보통 none
+                  filterQuality: FilterQuality.medium,
+                  alignment: Alignment.topLeft,
+                ),
               ),
-            ),
 
-            // 2) 먹색 베이스 오버레이(텍스트 가독성 유지)
-            Container(
-              color: const Color(0xFF1F1B16).withOpacity(0.01), // 먹색 느낌 (조절 가능)
+              // 2) 먹색 베이스 오버레이(텍스트 가독성 유지)
+              Container(
+                color: const Color(0xFF1F1B16)
+                    .withOpacity(0.01), // 먹색 느낌 (조절 가능)
+              ),
+            ],
+          ),
+
+          actions: [
+            IconButton(
+              onPressed: _repository == null ? null : _onAdd,
+              tooltip: '새 대화',
+              icon: const Icon(Icons.edit_square),
+            ),
+            IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: '로그아웃: ${LoginInfo.instance.displayName!}',
+              onPressed: () async => LoginInfo.instance.logout(),
             ),
           ],
         ),
+        body: _repository == null
+            ? Center(
+                child: _error != null
+                    ? Text('Error: $_error')
+                    : const CircularProgressIndicator(),
+              )
+            : SplitOrTabs(
+                tabs: [
+                  const Tab(text: 'Chats'),
+                  Tab(text: _currentChat?.title),
+                ],
+                children: [
+                  ChatListView(
+                    chats: _repository!.chats,
+                    selectedChatId: _currentChatId!,
+                    onChatSelected: _onChatSelected,
+                    onRenameChat: _onRenameChat,
+                    onDeleteChat: _onDeleteChat,
+                  ),
 
-        actions: [
-          IconButton(
-            onPressed: _repository == null ? null : _onAdd,
-            tooltip: '새 대화',
-            icon: const Icon(Icons.edit_square),
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: '로그아웃: ${LoginInfo.instance.displayName!}',
-            onPressed: () async => LoginInfo.instance.logout(),
-          ),
-        ],
-      ),
-      body: _repository == null
-          ? Center(
-              child: _error != null
-                  ? Text('Error: $_error')
-                  : const CircularProgressIndicator(),
-            )
-          : SplitOrTabs(
-              tabs: [
-                const Tab(text: 'Chats'),
-                Tab(text: _currentChat?.title),
-              ],
-              children: [
-                ChatListView(
-                  chats: _repository!.chats,
-                  selectedChatId: _currentChatId!,
-                  onChatSelected: _onChatSelected,
-                  onRenameChat: _onRenameChat,
-                  onDeleteChat: _onDeleteChat,
-                ),
+                  Stack(
+                    children: [
+                      //  한지 배경 (아주 옅게 5~8%)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          ignoring: true,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              // (선택) 베이스 컬러를 아주 연한 미색으로 깔고 싶으면 사용
+                              // Container(color: const Color(0xFFF7F2E8)),
 
-                Stack(
-                  children: [
-                    //  한지 배경 (아주 옅게 5~8%)
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        ignoring: true,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            // (선택) 베이스 컬러를 아주 연한 미색으로 깔고 싶으면 사용
-                            // Container(color: const Color(0xFFF7F2E8)),
+                              // 텍스처 이미지
+                              Opacity(
+                                opacity: 0.8, // ✅ 5~8% 권장: 0.05~0.08
+                                child: Image.asset(
+                                  'assets/images/hanji.png',
+                                  // ✅ 타일링 텍스처면 repeat 추천 (정사각형 seamless 텍스처에 최적)
+                                  repeat: ImageRepeat.repeat,
+                                  fit: BoxFit.none,
 
-                            // 텍스처 이미지
-                            Opacity(
-                              opacity: 0.8, // ✅ 5~8% 권장: 0.05~0.08
-                              child: Image.asset(
-                                'assets/images/hanji.png',
-                                // ✅ 타일링 텍스처면 repeat 추천 (정사각형 seamless 텍스처에 최적)
-                                repeat: ImageRepeat.repeat,
-                                fit: BoxFit.none,
+                                  // 큰 이미지(스캔본)로 "한 장"처럼 쓰고 싶으면 아래처럼 바꾸세요:
+                                  // repeat: ImageRepeat.noRepeat,
+                                  // fit: BoxFit.cover,
 
-                                // 큰 이미지(스캔본)로 "한 장"처럼 쓰고 싶으면 아래처럼 바꾸세요:
-                                // repeat: ImageRepeat.noRepeat,
-                                // fit: BoxFit.cover,
-
-                                filterQuality: FilterQuality.medium,
-                                alignment: Alignment.topLeft,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // ✅ 2) 기존 LayoutBuilder + LlmChatView
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final isMobile = constraints.maxWidth < 600;
-
-                        final bubbleMaxWidth = isMobile
-                            ? (constraints.maxWidth - 16).clamp(0, double.infinity).toDouble()
-                            : 600.0;
-
-                        final baseStyle = AppTheme.chatStyle(
-                          context,
-                          hintText: '고민이 있나요? 궁금한 내용을 말해주세요.',
-                        );
-
-                        final newLlmStyle =
-                            (baseStyle.llmMessageStyle ?? LlmMessageStyle.defaultStyle()).copyWith(
-                          icon: null,
-                          maxWidth: bubbleMaxWidth,
-                          minWidth: 0,
-                          flex: 14,
-                        );
-
-                        final newChatStyle = baseStyle.copyWith(
-                          llmMessageStyle: newLlmStyle,
-                          padding: isMobile ? const EdgeInsets.fromLTRB(8, 8, 8, 12) : baseStyle.padding,
-
-                          // ✅ 중요: LlmChatView 자체 배경을 투명으로 해야
-                          // 뒤에 깐 hanji 텍스처가 보입니다.
-                          backgroundColor: Colors.transparent,
-                        );
-
-                        return LlmChatView(
-                          provider: _provider!,
-                          style: newChatStyle,
-                          messageSender: _messageSender,
-
-                          enableVoiceNotes: false,
-                          enableAttachments: false,
-                        );
-                      },
-                    ),
-
-                    // "생각중..." 표시 (기존 그대로)
-                    Positioned(
-                      left: 34,
-                      right: 76,
-                      bottom: 83 + MediaQuery.of(context).viewInsets.bottom,
-                      child: IgnorePointer(
-                        ignoring: true,
-                        child: AnimatedOpacity(
-                          opacity: _isThinking ? 1.0 : 0.0,
-                          duration: const Duration(milliseconds: 150),
-                          child: Align(
-                            alignment: Alignment.bottomLeft,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.surface,
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(
-                                  color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.6),
+                                  filterQuality: FilterQuality.medium,
+                                  alignment: Alignment.topLeft,
                                 ),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: const [
-                                  SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // ✅ 새 채팅이 비어있을 때만 캐릭터 오버레이 (질문 보내면 즉시 사라짐)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          ignoring: true,
+                          child: AnimatedOpacity(
+                            opacity: _showEmptyCharacter ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 180),
+                            child: AnimatedPadding(
+                              duration: const Duration(milliseconds: 180),
+                              padding: EdgeInsets.only(
+                                bottom: 110 +
+                                    MediaQuery.of(context).viewInsets.bottom,
+                              ),
+                              child: Align(
+                                alignment: Alignment.bottomCenter,
+                                child: FractionallySizedBox(
+                                  widthFactor: 0.55, // 화면 대비 크기
+                                  child: Opacity(
+                                    opacity: 0.95, // 살짝만 투명하게
+                                    child: Image.asset(
+                                      'assets/images/character.png',
+                                      fit: BoxFit.contain,
+                                      filterQuality: FilterQuality.high,
+                                    ),
                                   ),
-                                  SizedBox(width: 8),
-                                  Text('생각중...'),
-                                ],
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                )
-              ],
-            ),
-    );
+
+                      // ✅ 기존 LayoutBuilder + LlmChatView
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final isMobile = constraints.maxWidth < 600;
+
+                          final bubbleMaxWidth = isMobile
+                              ? (constraints.maxWidth - 16)
+                                  .clamp(0, double.infinity)
+                                  .toDouble()
+                              : 600.0;
+
+                          final baseStyle = AppTheme.chatStyle(
+                            context,
+                            hintText: '고민이 있나요? 궁금한 내용을 말해주세요.',
+                          );
+
+                          final newLlmStyle = (baseStyle.llmMessageStyle ??
+                                  LlmMessageStyle.defaultStyle())
+                              .copyWith(
+                            icon: null,
+                            maxWidth: bubbleMaxWidth,
+                            minWidth: 0,
+                            flex: 14,
+                          );
+
+                          final newChatStyle = baseStyle.copyWith(
+                            llmMessageStyle: newLlmStyle,
+                            padding: isMobile
+                                ? const EdgeInsets.fromLTRB(8, 8, 8, 12)
+                                : baseStyle.padding,
+
+                            // ✅ 중요: LlmChatView 자체 배경을 투명으로 해야
+                            // 뒤에 깐 hanji 텍스처가 보입니다.
+                            backgroundColor: Colors.transparent,
+                          );
+
+                          return LlmChatView(
+                            provider: _provider!,
+                            style: newChatStyle,
+                            messageSender: _messageSender,
+                            enableVoiceNotes: false,
+                            enableAttachments: false,
+                          );
+                        },
+                      ),
+
+                      // "생각중..." 표시 (기존 그대로)
+                      Positioned(
+                        left: 34,
+                        right: 76,
+                        bottom: 83 + MediaQuery.of(context).viewInsets.bottom,
+                        child: IgnorePointer(
+                          ignoring: true,
+                          child: AnimatedOpacity(
+                            opacity: _isThinking ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 150),
+                            child: Align(
+                              alignment: Alignment.bottomLeft,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color:
+                                      Theme.of(context).colorScheme.surface,
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .outlineVariant
+                                        .withOpacity(0.6),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: const [
+                                    SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2),
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text('생각중...'),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                ],
+              ),
+      );
 
   Future<void> _onAdd() async {
     final chat = await _repository!.addChat();
@@ -331,7 +395,6 @@ Widget build(BuildContext context) => Scaffold(
 
     final userText = (firstUser.text ?? '').trim();
     final llmText = (firstLlm.text ?? '').trim();
-
 
     // 텍스트도 없고 첨부도 없으면 스킵 (text는 null일 수 있음)
     if (userText.isEmpty && firstUser.attachments.isEmpty) return;
