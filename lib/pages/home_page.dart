@@ -12,6 +12,8 @@ import '../theme/app_theme.dart';
 import '../theme/brand_colors.dart';
 import 'split_or_tabs.dart';
 
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -46,19 +48,26 @@ class _HomePageState extends State<HomePage> {
     if (mounted) {
       setState(() {
         _isThinking = true;
-        //_showEmptyCharacter = false; // ✅ 질문 보내는 즉시 캐릭터 숨김
+        _showEmptyCharacter = false; // 질문 보내는 즉시 캐릭터 숨김(원하시면)
       });
     }
 
+    bool firstTokenArrived = false;
+
     try {
-      // provider가 null일 수 없는 흐름에서만 호출되도록 되어 있어야 합니다.
-      final stream =
-          _provider!.sendMessageStream(prompt, attachments: attachments);
+      final stream = _provider!.sendMessageStream(prompt, attachments: attachments);
 
       await for (final chunk in stream) {
+        // ✅ "첫 토큰(의미 있는 텍스트)" 도착 순간에 생각중... 끄기
+        if (!firstTokenArrived && chunk.trim().isNotEmpty) {
+          firstTokenArrived = true;
+          if (mounted) setState(() => _isThinking = false);
+        }
+
         yield chunk;
       }
     } finally {
+      // 스트림이 에러/종료되면 안전하게 끄기
       if (mounted) setState(() => _isThinking = false);
     }
   }
@@ -97,11 +106,12 @@ class _HomePageState extends State<HomePage> {
   void _setProvider([Iterable<ChatMessage>? history]) {
     _provider?.removeListener(_onHistoryChanged);
 
+    // ignore: unused_local_variable
     final shouldShow = _isChatEmpty(history);
 
     setState(() {
       _isThinking = false;
-      _showEmptyCharacter = true; //shouldShow; // 👤비어있으면 캐릭터 보이기
+      _showEmptyCharacter = true; // 비어있으면 캐릭터 보이기
       _provider = _createProvider(history);
     });
 
@@ -129,41 +139,30 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(
           title: const Text('溫古(On-Go)'),
-
-          // AppBar 기본색 제거(투명) + 재질감(머티리얼3) 틴트 제거
           backgroundColor: Colors.transparent,
           surfaceTintColor: Colors.transparent,
           elevation: 0,
           scrolledUnderElevation: 0,
           shadowColor: Colors.transparent,
-
-          // 상태바 아이콘(시간/배터리) 밝게
           systemOverlayStyle: SystemUiOverlayStyle.light,
-
-          // 여기서 질감 배경 깔기
           flexibleSpace: Stack(
             fit: StackFit.expand,
             children: [
-              // 텍스처 이미지
               Opacity(
-                opacity: 0.9, // 질감 세기
+                opacity: 0.9,
                 child: Image.asset(
                   'assets/images/ink.png',
-                  repeat: ImageRepeat.repeat, // 텍스처면 repeat 추천
-                  fit: BoxFit.none, // repeat일 때 보통 none
+                  repeat: ImageRepeat.repeat,
+                  fit: BoxFit.none,
                   filterQuality: FilterQuality.medium,
                   alignment: Alignment.topLeft,
                 ),
               ),
-
-              // 2) 먹색 베이스 오버레이(텍스트 가독성 유지)
               Container(
-                color: const Color(0xFF1F1B16)
-                    .withOpacity(0.01), // 먹색 느낌 (조절 가능)
+                color: const Color(0xFF1F1B16).withOpacity(0.01),
               ),
             ],
           ),
-
           actions: [
             IconButton(
               onPressed: _repository == null ? null : _onAdd,
@@ -196,32 +195,21 @@ class _HomePageState extends State<HomePage> {
                     onRenameChat: _onRenameChat,
                     onDeleteChat: _onDeleteChat,
                   ),
-
                   Stack(
                     children: [
-                      //  한지 배경 (아주 옅게 5~8%)
+                      // 한지 배경
                       Positioned.fill(
                         child: IgnorePointer(
                           ignoring: true,
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
-                              // (선택) 베이스 컬러를 아주 연한 미색으로 깔고 싶으면 사용
-                              // Container(color: const Color(0xFFF7F2E8)),
-
-                              // 텍스처 이미지
                               Opacity(
-                                opacity: 0.8, // ✅ 5~8% 권장: 0.05~0.08
+                                opacity: 0.8,
                                 child: Image.asset(
                                   'assets/images/hanji.png',
-                                  // ✅ 타일링 텍스처면 repeat 추천 (정사각형 seamless 텍스처에 최적)
                                   repeat: ImageRepeat.repeat,
                                   fit: BoxFit.none,
-
-                                  // 큰 이미지(스캔본)로 "한 장"처럼 쓰고 싶으면 아래처럼 바꾸세요:
-                                  // repeat: ImageRepeat.noRepeat,
-                                  // fit: BoxFit.cover,
-
                                   filterQuality: FilterQuality.medium,
                                   alignment: Alignment.topLeft,
                                 ),
@@ -230,8 +218,7 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                       ),
-
-                      // ✅ 새 채팅이 비어있을 때만 캐릭터 오버레이 (질문 보내면 즉시 사라짐)
+                      // 캐릭터 오버레이
                       Positioned.fill(
                         child: IgnorePointer(
                           ignoring: true,
@@ -247,9 +234,9 @@ class _HomePageState extends State<HomePage> {
                               child: Align(
                                 alignment: Alignment.bottomCenter,
                                 child: FractionallySizedBox(
-                                  widthFactor: 0.55, // 화면 대비 크기
+                                  widthFactor: 0.55,
                                   child: Opacity(
-                                    opacity: 0.95, // 살짝만 투명하게
+                                    opacity: 0.95,
                                     child: Image.asset(
                                       'assets/images/character.png',
                                       fit: BoxFit.contain,
@@ -262,12 +249,10 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                       ),
-
-                      // ✅ 기존 LayoutBuilder + LlmChatView
+                      // 채팅 뷰
                       LayoutBuilder(
                         builder: (context, constraints) {
                           final isMobile = constraints.maxWidth < 600;
-
                           final bubbleMaxWidth = isMobile
                               ? (constraints.maxWidth - 16)
                                   .clamp(0, double.infinity)
@@ -276,16 +261,22 @@ class _HomePageState extends State<HomePage> {
 
                           final baseStyle = AppTheme.chatStyle(
                             context,
-                            hintText: '고민이 있나요? 궁금한 내용을 말해주세요.',
+                            hintText: '고민이나 궁금한 내용을 말해주세요.',
                           );
 
-                          final newLlmStyle = (baseStyle.llmMessageStyle ??
-                                  LlmMessageStyle.defaultStyle())
-                              .copyWith(
-                            icon: null,
-                            maxWidth: bubbleMaxWidth,
-                            minWidth: 0,
-                            flex: 14,
+                          // ✅ 기존 llm 스타일(패딩/마크다운 스타일)을 먼저 “기억”해둡니다.
+                          final llmBase = baseStyle.llmMessageStyle ?? LlmMessageStyle.defaultStyle();
+                          final llmInnerPadding = llmBase.padding;
+                          final llmMarkdownStyle = llmBase.markdownStyle;
+
+
+                          // ✅ 핵심: 말풍선 자체 패딩을 0으로 (빈 응답일 때 말풍선이 0 크기)
+                          final newLlmStyle = llmBase.copyWith(
+                          icon: null,
+                          maxWidth: bubbleMaxWidth,
+                          minWidth: 0,
+                          flex: 14,
+                          padding: EdgeInsets.zero,
                           );
 
                           final newChatStyle = baseStyle.copyWith(
@@ -293,9 +284,6 @@ class _HomePageState extends State<HomePage> {
                             padding: isMobile
                                 ? const EdgeInsets.fromLTRB(8, 8, 8, 12)
                                 : baseStyle.padding,
-
-                            // ✅ 중요: LlmChatView 자체 배경을 투명으로 해야
-                            // 뒤에 깐 hanji 텍스처가 보입니다.
                             backgroundColor: Colors.transparent,
                           );
 
@@ -303,13 +291,28 @@ class _HomePageState extends State<HomePage> {
                             provider: _provider!,
                             style: newChatStyle,
                             messageSender: _messageSender,
+
+                            // ✅ 핵심: 스트리밍 시작 직후 response == ''이면 아예 렌더링 안 함
+                            responseBuilder: (context, response) {
+                              if (response.trim().isEmpty) {
+                                return const SizedBox.shrink(); // <- 이게 “빈 말풍선 생성”을 막습니다.
+                              }
+
+                              return Padding(
+                                padding: llmInnerPadding, // ✅ 기존 말풍선 여백 복원
+                                child: MarkdownBody(
+                                  data: response,
+                                  styleSheet: llmMarkdownStyle ?? MarkdownStyleSheet.fromTheme(Theme.of(context)),
+                                ),
+                              );
+                            },
+
                             enableVoiceNotes: false,
                             enableAttachments: false,
                           );
                         },
                       ),
-
-                      // "생각중..." 표시 (기존 그대로)
+                      // "생각중..." 표시
                       Positioned(
                         left: 34,
                         right: 76,
@@ -323,10 +326,11 @@ class _HomePageState extends State<HomePage> {
                               alignment: Alignment.bottomLeft,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 6),
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
                                 decoration: BoxDecoration(
-                                  color:
-                                      Theme.of(context).colorScheme.surface,
+                                  color: Theme.of(context).colorScheme.surface,
                                   borderRadius: BorderRadius.circular(18),
                                   border: Border.all(
                                     color: Theme.of(context)
@@ -342,7 +346,8 @@ class _HomePageState extends State<HomePage> {
                                       width: 14,
                                       height: 14,
                                       child: CircularProgressIndicator(
-                                          strokeWidth: 2),
+                                        strokeWidth: 2,
+                                      ),
                                     ),
                                     SizedBox(width: 8),
                                     Text('생각중...'),
@@ -376,15 +381,11 @@ class _HomePageState extends State<HomePage> {
     if (repo == null || provider == null || chat == null) return;
 
     final history = provider.history.toList();
-
-    // 1) 히스토리 DB 업데이트
     await repo.updateHistory(chat, history);
 
-    // 2) 이미 제목이 바뀐 채팅이거나, 생성 중이면 종료
     if (_isGeneratingTitle) return;
     if (chat.title != ChatRepository.newChatTitle) return;
 
-    // 3) "첫 user 질문" + "그에 대한 첫 llm 답변"이 생겼을 때만 제목 생성
     final userIdx = history.indexWhere((m) => m.origin.isUser);
     if (userIdx < 0) return;
     final llmIdx = history.indexWhere((m) => m.origin.isLlm, userIdx + 1);
@@ -396,15 +397,12 @@ class _HomePageState extends State<HomePage> {
     final userText = (firstUser.text ?? '').trim();
     final llmText = (firstLlm.text ?? '').trim();
 
-    // 텍스트도 없고 첨부도 없으면 스킵 (text는 null일 수 있음)
     if (userText.isEmpty && firstUser.attachments.isEmpty) return;
     if (llmText.isEmpty && firstLlm.attachments.isEmpty) return;
 
     _isGeneratingTitle = true;
     try {
-      // 제목 생성에는 첫 Q/A만 넣기
       final titleProvider = _createProvider([firstUser, firstLlm]);
-
       final stream = titleProvider.sendMessageStream(
         '사용자의 질문을 기준으로 이 대화의 제목을 아주 짧은 한국어로 만들어 주세요.\n'
         '- 한 줄\n'
@@ -414,7 +412,6 @@ class _HomePageState extends State<HomePage> {
       );
 
       final title = (await stream.join()).trim();
-
       if (title.isEmpty) return;
 
       final chatWithNewTitle = Chat(id: chat.id, title: title);
@@ -483,10 +480,6 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-/* ===========================
-   아래는 "현재 사용 중인" ChatListView UI 그대로
-   =========================== */
-
 class ChatListView extends StatelessWidget {
   const ChatListView({
     required this.chats,
@@ -516,12 +509,13 @@ class ChatListView extends StatelessWidget {
         itemBuilder: (context, index) {
           final chat = chats[chats.length - index - 1];
           final selected = chat.id == selectedChatId;
-
           final title = chat.title.trim().isEmpty ? '새 대화' : chat.title.trim();
 
-          final cardColor = selected ? brandSecondary.withOpacity(0.14) : Colors.white;
-          final borderColor =
-              selected ? brandSecondary.withOpacity(0.85) : brandSecondary.withOpacity(0.40);
+          final cardColor =
+              selected ? brandSecondary.withOpacity(0.14) : Colors.white;
+          final borderColor = selected
+              ? brandSecondary.withOpacity(0.85)
+              : brandSecondary.withOpacity(0.40);
 
           return Material(
             color: cardColor,
@@ -534,14 +528,17 @@ class ChatListView extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               onTap: () => onChatSelected(chat),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 child: Row(
                   children: [
                     Container(
                       width: 4,
                       height: 34,
                       decoration: BoxDecoration(
-                        color: selected ? brandSecondary.withOpacity(0.95) : Colors.transparent,
+                        color: selected
+                            ? brandSecondary.withOpacity(0.95)
+                            : Colors.transparent,
                         borderRadius: BorderRadius.circular(999),
                       ),
                     ),
@@ -554,7 +551,8 @@ class ChatListView extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: textTheme.titleMedium?.copyWith(
                             color: brandPrimary,
-                            fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                            fontWeight:
+                                selected ? FontWeight.w700 : FontWeight.w600,
                           ),
                         ),
                       ),
@@ -562,7 +560,10 @@ class ChatListView extends StatelessWidget {
                     const SizedBox(width: 6),
                     PopupMenuButton<_ChatAction>(
                       tooltip: '메뉴',
-                      icon: Icon(Icons.more_vert, color: brandPrimary.withOpacity(0.85)),
+                      icon: Icon(
+                        Icons.more_vert,
+                        color: brandPrimary.withOpacity(0.85),
+                      ),
                       onSelected: (action) {
                         switch (action) {
                           case _ChatAction.rename:
